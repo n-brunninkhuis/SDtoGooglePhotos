@@ -1,0 +1,8 @@
+[Unit]
+Description=USB device %i
+
+[Service]
+Type=oneshot
+ExecStart=/home/user/bin/usb-automount add %i
+ExecStop=/home/user/bin/usb-automount remove %i
+RemainAfterExit=true

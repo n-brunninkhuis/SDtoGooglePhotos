@@ -1,0 +1,1 @@
+KERNEL=="sd[a-z][0-9]", SUBSYSTEMS=="usb", ENV{ID_MODEL}=="Card_Reader", ACTION=="add", RUN+="/bin/systemctl start usb-automount@%k.service"

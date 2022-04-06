@@ -1,0 +1,74 @@
+#!/bin/bash
+
+pushover_token=""
+pushover_user=""
+home_dir="/home/user"
+
+command="$1"
+DEVBASE="$2"
+device="/dev/${DEVBASE}"
+
+# date >> ${home_dir}/log
+# echo $command >> ${home_dir}/log
+# echo $device >> ${home_dir}/log
+
+if [ "$device" = "" ]; then
+    echo "No device specified"
+    exit
+fi
+
+label=$(blkid -o export "$device" | grep "^LABEL=" | sed 's/^LABEL=//' |\
+	       sed 's/[^0-9a-zA-Z]//g')
+
+# Prefer using the partition label, if any, but fall back on the device name if not.
+if [ "$label" = "" ]; then
+    name=$(basename "$device")
+else
+    name="$label"
+fi
+
+usb="/media/$name"
+suffix=""
+
+# Make sure we don't clobber any other mounted devices with the same name.
+while mountpoint -q "$usb$suffix"; do
+    if [ "$suffix" = "" ]; then
+	suffix=1
+    else
+	suffix=$(($suffix + 1))
+    fi
+done
+
+rm -f /media/disk
+
+if [ "$command" = "add" ]; then
+    if [ ! -d "$usb" ]; then
+	   mkdir "$usb"
+    fi
+    mount "$device" "$usb"
+    find "${usb}" -type f \( -iname \*.jpg -o -iname \*.mp4 \) > ${home_dir}/.usb-automount-cur
+    comm -23 <(sort ${home_dir}/.usb-automount-cur) <(sort ${home_dir}/.usb-automount-all) > ${home_dir}/.usb-automount-now
+    numcur=`cat ${home_dir}/.usb-automount-cur | wc -l`
+    numnow=`cat ${home_dir}/.usb-automount-now | wc -l`
+    numdouble=`expr $numcur - $numnow`
+    curl -s \
+        --form-string "token=${pushover_token}" \
+        --form-string "user=${pushover_user}" \
+        --form-string "title=Upload started" \
+        --form-string "message=${numnow} files are being uploaded. ${numdouble} files already done." \
+        https://api.pushover.net/1/messages.json
+    runuser -l niek -c "python3 ${home_dir}/bin/gphotos/gphotos.py `cat ${home_dir}/.usb-automount-now | paste -s -d ' '`" >> ${home_dir}/log
+    cat ${home_dir}/.usb-automount-now >> ${home_dir}/.usb-automount-all
+    curl -s \
+        --form-string "token=${pushover_token}" \
+        --form-string "user=${pushover_user}" \
+        --form-string "title=Upload finished" \
+        --form-string "message=${numnow} files uploaded." \
+        https://api.pushover.net/1/messages.json
+    systemctl stop usb-automount@${name}
+elif [ "$command" = "remove" ]; then
+    umount "$device"
+    if [ ! -d "$usb" ]; then
+        rmdir "$usb"
+    fi
+fi
